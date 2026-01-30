@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "devcal": {
+      "command": "node",
+      "args": ["C:/path/to/devcal/mcp-server/index.js"],
+      "env": {
+        "DEVCAL_API": "http://localhost:3000/api"
+      }
+    }
+  }
+}
