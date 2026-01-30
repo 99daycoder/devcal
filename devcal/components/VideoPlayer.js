@@ -198,12 +198,14 @@ export default function VideoPlayer({ isOpen, onClose, video, analysis }) {
             </div>
           )}
 
-          {/* Actual video element */}
-          {video?.url && !video.isDemo && (
+          {/* Actual video element - works for both real API URLs and local files */}
+          {video?.url && !video.isDemo && !video.isProcessing && (
             <video
               ref={videoRef}
               src={video.url}
               className="w-full h-full"
+              controls
+              autoPlay
               onLoadedMetadata={handleLoadedMetadata}
               onTimeUpdate={handleTimeUpdate}
               onPlay={handlePlay}
@@ -212,6 +214,29 @@ export default function VideoPlayer({ isOpen, onClose, video, analysis }) {
               onError={handleError}
               onClick={togglePlay}
             />
+          )}
+
+          {/* Processing state - show when video is being generated */}
+          {video?.isProcessing && (
+            <div className="absolute inset-0 flex items-center justify-center flex-col gap-4 bg-gradient-to-b from-space-dark to-space-purple p-8">
+              <div className="relative">
+                <div className="w-24 h-24 rounded-full bg-alibaba-orange/20 flex items-center justify-center animate-pulse">
+                  <span className="text-5xl">🎬</span>
+                </div>
+                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
+                  <div className="loading-spinner w-8 h-8" />
+                </div>
+              </div>
+              <p className="text-xl text-alibaba-orange font-bold mt-4">Generating Video...</p>
+              <p className="text-sm text-gray-400">Alibaba WAN is creating your briefing</p>
+              <p className="text-xs text-gray-500">This typically takes 1-2 minutes</p>
+              {video?.script && (
+                <div className="mt-6 max-w-lg p-4 bg-space-dark/50 rounded-lg border border-neon-blue/20">
+                  <p className="text-xs text-neon-blue mb-2 font-medium">📝 J.A.R.V.I.S Script Preview:</p>
+                  <p className="text-sm text-gray-300 italic leading-relaxed">{video.script.substring(0, 300)}...</p>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

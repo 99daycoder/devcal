@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { format, addDays, differenceInHours } from 'date-fns'
+import Link from 'next/link'
 import Calendar from '../components/Calendar'
 import TaskModal from '../components/TaskModal'
 import VideoPlayer from '../components/VideoPlayer'
@@ -40,6 +41,8 @@ export default function HomePage() {
   const [videoHistory, setVideoHistory] = useState([])
   const [showVideoPlayer, setShowVideoPlayer] = useState(false)
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false)
+  const [videoTaskId, setVideoTaskId] = useState(null)
+  const [isVideoReady, setIsVideoReady] = useState(false)
 
   // Analysis state
   const [analysis, setAnalysis] = useState(null)
@@ -130,9 +133,43 @@ export default function HomePage() {
     }
   }
 
+  // Poll video status
+  const pollVideoStatus = useCallback(async (taskId) => {
+    try {
+      const response = await fetch(`/api/generate-video?taskId=${taskId}`)
+      const data = await response.json()
+
+      if (data.status === 'completed' && data.videoUrl) {
+        setCurrentVideo(prev => ({
+          ...prev,
+          url: data.videoUrl,
+          isDemo: false,
+          isProcessing: false
+        }))
+        setVideoTaskId(null)
+        setIsVideoReady(true)
+        setIsGeneratingVideo(false)
+        return true // Video ready
+      } else if (data.status === 'failed') {
+        console.error('Video generation failed:', data.error)
+        setVideoTaskId(null)
+        setIsGeneratingVideo(false)
+        return true // Stop polling
+      }
+      return false // Keep polling
+    } catch (error) {
+      console.error('Error checking video status:', error)
+      return false
+    }
+  }, [])
+
   // Generate new briefing video
   const generateVideo = async (isWeekly = false) => {
+    console.log('🎬 Starting video generation...')
     setIsGeneratingVideo(true)
+    setIsVideoReady(false)
+    setVideoTaskId(null)
+
     try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd')
       const response = await fetch('/api/video', {
@@ -145,19 +182,58 @@ export default function HomePage() {
         })
       })
       const data = await response.json()
+      console.log('📹 Video API response:', data)
 
       if (data.success) {
-        setCurrentVideo(data.video)
+        // Always set the video data first
+        const videoData = {
+          ...data.video,
+          isProcessing: data.isProcessing || false
+        }
+        setCurrentVideo(videoData)
         setAnalysis(data.analysis)
-        setShowVideoPlayer(true)
+
+        // Check if video is processing (real API call)
+        if (data.isProcessing && data.taskId) {
+          console.log('⏳ Video is processing, taskId:', data.taskId)
+          setVideoTaskId(data.taskId)
+          // Show the player with loading state
+          setShowVideoPlayer(true)
+        } else {
+          // Demo mode or immediate video
+          console.log('✅ Video ready (demo mode or immediate)')
+          setIsVideoReady(true)
+          setShowVideoPlayer(true)
+          setIsGeneratingVideo(false)
+        }
         fetchVideoHistory()
+      } else {
+        console.error('❌ Video API error:', data.error)
+        setIsGeneratingVideo(false)
       }
     } catch (error) {
-      console.error('Error generating video:', error)
-    } finally {
+      console.error('❌ Error generating video:', error)
       setIsGeneratingVideo(false)
     }
   }
+
+  // Poll for video status when we have a task ID
+  useEffect(() => {
+    if (!videoTaskId) return
+
+    const interval = setInterval(async () => {
+      const isReady = await pollVideoStatus(videoTaskId)
+      if (isReady) {
+        clearInterval(interval)
+      }
+    }, 10000) // Check every 10 seconds
+
+    // Also check immediately
+    pollVideoStatus(videoTaskId)
+
+    // Cleanup
+    return () => clearInterval(interval)
+  }, [videoTaskId, pollVideoStatus])
 
   // ========================================
   // TASK OPERATIONS
@@ -197,6 +273,9 @@ export default function HomePage() {
         })
       }
       fetchTasks()
+
+      // Auto-generate a briefing video for the new tasks
+      generateVideo(false)
     } catch (error) {
       console.error('Error generating template:', error)
     }
@@ -251,11 +330,12 @@ export default function HomePage() {
     fetchVideoHistory()
   }, [])
 
-  // Show video on first load
+  // Disabled auto-generate on first load to save API credits
+  // User can click "Generate Briefing" button instead
   useEffect(() => {
     if (isFirstLoad && !isLoadingTasks) {
       setIsFirstLoad(false)
-      generateVideo()
+      // generateVideo() - disabled to save API calls
     }
   }, [isFirstLoad, isLoadingTasks])
 
@@ -281,6 +361,14 @@ export default function HomePage() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-3">
+          {/* GENERATE VIDEO - Test WAN API */}
+          <Link
+            href="/generate-video"
+            className="px-4 py-3 rounded-lg bg-alibaba-orange/20 border border-alibaba-orange hover:bg-alibaba-orange/30 transition flex items-center gap-2 font-bold"
+          >
+            <span>🎬</span> GENERATE VIDEO
+          </Link>
+
           {/* Context Recall - MEMORY FEATURE */}
           <button
             onClick={() => setShowContextRecall(true)}
@@ -325,14 +413,28 @@ export default function HomePage() {
             )}
           </button>
 
-          {/* Watch Last Video */}
+          {/* Watch Last Video / Loading State */}
           {currentVideo && (
-            <button
-              onClick={() => setShowVideoPlayer(true)}
-              className="px-4 py-3 rounded-lg bg-neon-blue/20 border border-neon-blue hover:bg-neon-blue/30 transition"
-            >
-              ▶ Watch
-            </button>
+            videoTaskId ? (
+              <div className="px-4 py-3 rounded-lg bg-alibaba-orange/20 border border-alibaba-orange flex items-center gap-2">
+                <span className="loading-spinner w-4 h-4" />
+                <span className="text-sm">Generating...</span>
+              </div>
+            ) : isVideoReady ? (
+              <button
+                onClick={() => setShowVideoPlayer(true)}
+                className="px-4 py-3 rounded-lg bg-neon-green/20 border border-neon-green hover:bg-neon-green/30 transition flex items-center gap-2"
+              >
+                ▶ PLAY
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowVideoPlayer(true)}
+                className="px-4 py-3 rounded-lg bg-neon-blue/20 border border-neon-blue hover:bg-neon-blue/30 transition"
+              >
+                ▶ Watch
+              </button>
+            )
           )}
         </div>
       </div>
@@ -556,7 +658,48 @@ export default function HomePage() {
               Quick Actions
             </h3>
 
+            {/* Video Generation Status */}
+            {videoTaskId && (
+              <div className="mb-4 p-3 rounded-lg bg-alibaba-orange/10 border border-alibaba-orange/30 animate-pulse">
+                <div className="flex items-center gap-3">
+                  <span className="loading-spinner w-5 h-5" />
+                  <div>
+                    <div className="font-medium text-sm text-alibaba-orange">Video Generating...</div>
+                    <div className="text-xs text-gray-400">This takes 1-2 minutes</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Video Ready Notification */}
+            {isVideoReady && currentVideo && !showVideoPlayer && (
+              <button
+                onClick={() => setShowVideoPlayer(true)}
+                className="w-full mb-4 p-3 rounded-lg bg-neon-green/20 border border-neon-green hover:bg-neon-green/30 transition"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">▶</span>
+                  <div className="text-left">
+                    <div className="font-medium text-sm text-neon-green">Video Ready!</div>
+                    <div className="text-xs text-gray-400">Click to play your briefing</div>
+                  </div>
+                </div>
+              </button>
+            )}
+
             <div className="space-y-3">
+              {/* TEST VIDEO API - Direct Test */}
+              <Link
+                href="/generate-video"
+                className="w-full p-3 rounded-lg bg-alibaba-orange/10 border border-alibaba-orange/30 hover:border-alibaba-orange/50 transition text-left flex items-center gap-3"
+              >
+                <span className="text-xl">🎬</span>
+                <div>
+                  <div className="font-medium text-sm text-alibaba-orange">GENERATE VIDEO</div>
+                  <div className="text-xs text-gray-500">Test WAN API directly</div>
+                </div>
+              </Link>
+
               {/* MEMORY PLATFORM - Key Feature */}
               <button
                 onClick={() => setShowContextRecall(true)}
