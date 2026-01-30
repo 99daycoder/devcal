@@ -5,8 +5,9 @@
 // ============================================
 // Displays the AI-generated catchup video
 // in a centered lightbox with auto-play
+// Now with Text-to-Speech for J.A.R.V.I.S voice!
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { format } from 'date-fns'
 
 export default function VideoPlayer({ isOpen, onClose, video, analysis }) {
@@ -20,6 +21,68 @@ export default function VideoPlayer({ isOpen, onClose, video, analysis }) {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
   const [showTranscript, setShowTranscript] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [speechSupported, setSpeechSupported] = useState(false)
+
+  // Check for speech synthesis support
+  useEffect(() => {
+    setSpeechSupported('speechSynthesis' in window)
+  }, [])
+
+  // Text-to-Speech function - J.A.R.V.I.S voice
+  const speakScript = useCallback(() => {
+    if (!video?.script || !speechSupported) return
+
+    // Stop any current speech
+    window.speechSynthesis.cancel()
+
+    const utterance = new SpeechSynthesisUtterance(video.script)
+
+    // Try to get a British English voice (more J.A.R.V.I.S like)
+    const voices = window.speechSynthesis.getVoices()
+    const britishVoice = voices.find(v =>
+      v.lang === 'en-GB' ||
+      v.name.includes('British') ||
+      v.name.includes('Daniel') ||
+      v.name.includes('UK')
+    )
+    const englishVoice = voices.find(v => v.lang.startsWith('en'))
+
+    if (britishVoice) {
+      utterance.voice = britishVoice
+    } else if (englishVoice) {
+      utterance.voice = englishVoice
+    }
+
+    // J.A.R.V.I.S style: calm, measured, slightly robotic
+    utterance.rate = 0.95  // Slightly slower
+    utterance.pitch = 0.9  // Slightly lower pitch
+    utterance.volume = 1
+
+    utterance.onstart = () => setIsSpeaking(true)
+    utterance.onend = () => setIsSpeaking(false)
+    utterance.onerror = () => setIsSpeaking(false)
+
+    window.speechSynthesis.speak(utterance)
+  }, [video?.script, speechSupported])
+
+  // Stop speech when closing
+  useEffect(() => {
+    if (!isOpen) {
+      window.speechSynthesis?.cancel()
+      setIsSpeaking(false)
+    }
+  }, [isOpen])
+
+  // Load voices (needed for some browsers)
+  useEffect(() => {
+    if (speechSupported) {
+      window.speechSynthesis.getVoices()
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices()
+      }
+    }
+  }, [speechSupported])
 
   // Auto-play when modal opens
   useEffect(() => {
@@ -162,13 +225,38 @@ export default function VideoPlayer({ isOpen, onClose, video, analysis }) {
             <div className="absolute inset-0 flex items-center justify-center flex-col gap-4 bg-gradient-to-b from-space-dark to-space-purple p-8">
               {/* Simulated AI Assistant */}
               <div className="relative">
-                <div className="w-32 h-32 rounded-full bg-gradient-to-r from-neon-blue to-neon-purple flex items-center justify-center">
-                  <span className="text-6xl">👩‍🚀</span>
+                <div className={`w-32 h-32 rounded-full bg-gradient-to-r from-neon-blue to-neon-purple flex items-center justify-center ${isSpeaking ? 'animate-pulse' : ''}`}>
+                  <span className="text-6xl">🤖</span>
                 </div>
                 <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-neon-blue/30 text-xs whitespace-nowrap">
-                  AI Assistant
+                  J.A.R.V.I.S
                 </div>
               </div>
+
+              {/* Speak Button for Demo */}
+              {speechSupported && (
+                <button
+                  onClick={() => {
+                    if (isSpeaking) {
+                      window.speechSynthesis.cancel()
+                      setIsSpeaking(false)
+                    } else {
+                      speakScript()
+                    }
+                  }}
+                  className={`mt-4 px-6 py-3 rounded-lg font-bold transition flex items-center gap-2 ${
+                    isSpeaking
+                      ? 'bg-neon-green/30 border-2 border-neon-green'
+                      : 'bg-alibaba-orange hover:bg-alibaba-orange/80'
+                  }`}
+                >
+                  {isSpeaking ? (
+                    <>🔊 Speaking... (Click to Stop)</>
+                  ) : (
+                    <>🤖 Play J.A.R.V.I.S Voice</>
+                  )}
+                </button>
+              )}
 
               {/* Script display */}
               <div className="max-w-lg text-center space-y-4 mt-4">
@@ -176,9 +264,9 @@ export default function VideoPlayer({ isOpen, onClose, video, analysis }) {
                   className="text-lg neon-text"
                   style={{ fontFamily: "'Orbitron', sans-serif" }}
                 >
-                  Demo Mode Active
+                  {isSpeaking ? '🔊 J.A.R.V.I.S Speaking...' : 'Briefing Ready'}
                 </p>
-                <p className="text-gray-300 text-sm leading-relaxed">
+                <p className="text-gray-300 text-sm leading-relaxed max-h-32 overflow-y-auto">
                   {video?.script || 'Good morning, Captain Sam. This is your development briefing. Configure the WAN API to enable video generation.'}
                 </p>
               </div>
@@ -271,6 +359,31 @@ export default function VideoPlayer({ isOpen, onClose, video, analysis }) {
             </div>
 
             <div className="flex items-center gap-4">
+              {/* J.A.R.V.I.S Voice Button */}
+              {video?.script && speechSupported && (
+                <button
+                  onClick={() => {
+                    if (isSpeaking) {
+                      window.speechSynthesis.cancel()
+                      setIsSpeaking(false)
+                    } else {
+                      speakScript()
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm transition flex items-center gap-2 ${
+                    isSpeaking
+                      ? 'bg-neon-green/30 border border-neon-green'
+                      : 'bg-alibaba-orange/20 hover:bg-alibaba-orange/30 border border-alibaba-orange'
+                  }`}
+                >
+                  {isSpeaking ? (
+                    <>🔊 Speaking...</>
+                  ) : (
+                    <>🤖 J.A.R.V.I.S</>
+                  )}
+                </button>
+              )}
+
               {/* Transcript toggle */}
               {video?.script && (
                 <button
@@ -285,7 +398,10 @@ export default function VideoPlayer({ isOpen, onClose, video, analysis }) {
 
               {/* Close button */}
               <button
-                onClick={onClose}
+                onClick={() => {
+                  window.speechSynthesis?.cancel()
+                  onClose()
+                }}
                 className="neon-button px-4 py-2 rounded-lg text-sm"
               >
                 Close
